@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Threading.Tasks;
 using Newtonsoft.Json.Linq;
 using Newtonsoft.Json;
+using System.Text;
 
 namespace dot_net_coveo_search
 {
@@ -18,10 +19,7 @@ namespace dot_net_coveo_search
         class VisitDetail
         {
             public string visitId
-            {
-                get;
-                set;
-            }
+            { get; set;}
             public string visitorId
             {
                 get;
@@ -122,27 +120,22 @@ namespace dot_net_coveo_search
 
             async Task SendSearchUA()
             {
-                var UsageAnalyticsBody = new UsageAnalyticsBody();
-                UsageAnalyticsBody.language = "en";
-                UsageAnalyticsBody.searchQueryUid = VisitDetail.lastSearchId;
-                UsageAnalyticsBody.queryText = VisitDetail.lastQuery;
-                UsageAnalyticsBody.originLevel1 = "dot-net-search";
+                var usageAnalyticsBody = new UsageAnalyticsBody();
+                usageAnalyticsBody.language = "en";
+                usageAnalyticsBody.searchQueryUid = VisitDetail.lastSearchId;
+                usageAnalyticsBody.queryText = VisitDetail.lastQuery;
+                usageAnalyticsBody.originLevel1 = "dot-net-search";
 
-                Dictionary<string, string> queryParams = new Dictionary<string, string>
-                {
-                    {"org", COVEO_ORG_ID},
-                    {"visitor", VisitDetail.visitorId},
-                    {"body", JsonConvert.SerializeObject(UsageAnalyticsBody)}
-                };
+                var url = $"{ANALYTICS_ENDPOINT}&org={COVEO_ORG_ID}&visitor={VisitDetail.visitorId}";
+                var body = new StringContent(JsonConvert.SerializeObject(usageAnalyticsBody), Encoding.UTF8, "application/json");
 
                 try
                 {
-                    var response = await client.PostAsync(ANALYTICS_ENDPOINT + "?org=" + COVEO_ORG_ID, new FormUrlEncodedContent(queryParams));
+                    var response = await client.PostAsync(url, body);
                     response.EnsureSuccessStatusCode();
                     var responseString = response.Content.ReadAsStringAsync();
                     JObject responseJson = JObject.Parse(responseString.Result);
                     Console.WriteLine("UA send: " + responseJson);
-
                 }
                 catch (HttpRequestException e)
                 {
