@@ -9,7 +9,7 @@ namespace dot_net_coveo_search
 {
     class Program
     {
-        const string API_KEY = "xx6f0dae78-ca30-431b-8188-80a56d537d04";
+        const string API_KEY = "";
         const string COVEO_ORG_ID = "itemgrouping4a6ekmpe";
         const string SEARCH_ENDPOINT = "https://platform.cloud.coveo.com/rest/search/v2/";
         const string SEARCH_HUB = "dot-net-coveo-search";
