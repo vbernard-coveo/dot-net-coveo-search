@@ -17,22 +17,30 @@ namespace dot_net_coveo_search
         const string SEARCH_HUB = "";
         static async Task Main(string[] args)
         {
-
             // Create a Coveo Client
             var coveoClient = new CoveoClient(API_KEY, COVEO_ORG_ID);
             Console.ForegroundColor = ConsoleColor.Green;
             Console.WriteLine("🟢 Coveo Client Initialized for " + COVEO_ORG_ID);
-
+            
             // Get the visit detail. Use a visitor id stored in the cookie for better personalization.
             var visitDetail = await coveoClient.GetVisitInformation(null);
+            var continueSession = "Y";
 
-            // Do a search request
-            var lastQuery = await coveoClient.Search();
+                while(continueSession == "Y"){
+                // Do a search request
+                var lastQuery = await coveoClient.Search();
 
-            // Leave a trace.
-            await coveoClient.SendSearchUA();
+                // Leave a trace.
+                await coveoClient.SendSearchUA();
 
-            // Terminate te client
+                // Send a click
+                await coveoClient.SendClickUA();
+
+                Console.ForegroundColor = ConsoleColor.White;
+                Console.WriteLine("Continue session? (Y/N)");
+                continueSession = Console.ReadLine();
+                }
+                
             Console.ForegroundColor = ConsoleColor.Yellow;
             Console.WriteLine("🟡 Coveo Client Terminated");
         }
@@ -41,6 +49,7 @@ namespace dot_net_coveo_search
         {
             private const string SEARCH_ENDPOINT = "https://platform.cloud.coveo.com/rest/search/v2/";
             private const string ANALYTICS_ENDPOINT = "https://platform.cloud.coveo.com/rest/ua/v15/analytics/search?prioritizeVisitorParameter=false";
+            private const string CLICK_ENDPOINT = "https://platform.cloud.coveo.com/rest/ua/v15/analytics/click?prioritizeVisitorParameter=false";
             private const string VISIT_ENDPOINT = "https://platform.cloud.coveo.com/rest/ua/v15/analytics/visit?prioritizeVisitorParameter=false";
             private static readonly HttpClient client = new HttpClient();
             public String orgId { get; private set; }
@@ -136,7 +145,8 @@ namespace dot_net_coveo_search
                     keyword = queryParam.q,
                     aq = queryParam.aq,
                     responseTime = int.Parse(responseJson["duration"].ToString()),
-                    totalCount = int.Parse(responseJson["totalCount"].ToString())
+                    totalCount = int.Parse(responseJson["totalCount"].ToString()),
+                    results = responseJson
                 };
 
                 // Print Result Info
@@ -144,9 +154,11 @@ namespace dot_net_coveo_search
                 Console.WriteLine("✅ Query Success");
                 Console.ForegroundColor = ConsoleColor.White;
                 Console.WriteLine("Results: " + responseJson["totalCount"]);
+                var i = 0;
                 foreach (var item in responseJson["results"])
                 {
-                    Console.WriteLine($"{item["title"].ToString()} | {item["uri"].ToString()}");
+                    Console.WriteLine($"{i} | {item["title"].ToString()} | ${item["raw"]["dpretailprice"]} | {item["uri"].ToString()}");
+                    i++;
                 }
                 this.lastQuery = lastQuery;
                 return lastQuery;
@@ -156,14 +168,15 @@ namespace dot_net_coveo_search
             {
 
                 // Build Analytic Message
-                var usageAnalyticsBody = new UsageAnalyticsBody();
+                var usageAnalyticsBody = new SearchAnalyticBody();
                 usageAnalyticsBody.language = "en";
                 usageAnalyticsBody.queryText = this.lastQuery.keyword;
                 usageAnalyticsBody.originLevel1 = SEARCH_HUB;
-                usageAnalyticsBody.actionCause = "terminal input";
-                usageAnalyticsBody.actionType = "server side query";
+                usageAnalyticsBody.actionCause = "searchboxSubmit";
+                usageAnalyticsBody.actionType = "search box";
                 usageAnalyticsBody.originContext = "Search";
-                usageAnalyticsBody.userAgent = "Server Side Client";
+                usageAnalyticsBody.username = "vbernard@coveo.com";
+                usageAnalyticsBody.userDisplayName = "Vincent";
                 usageAnalyticsBody.searchQueryUid = this.lastQuery.searchid;
                 usageAnalyticsBody.responseTime = this.lastQuery.responseTime;
                 usageAnalyticsBody.advancedQuery = this.lastQuery.aq;
@@ -185,6 +198,58 @@ namespace dot_net_coveo_search
                 Console.ForegroundColor = ConsoleColor.White;
                 Console.WriteLine("UA send: " + responseJson);
 
+            }
+
+            public async Task SendClickUA(){
+                var selectedResult = "";
+                Console.ForegroundColor = ConsoleColor.White;
+                Console.WriteLine("Click on? [0-9] or N");
+                selectedResult = Console.ReadLine();
+                
+                if(selectedResult == "N"){
+                    return;
+                }
+                // Print Selected Result
+                Console.WriteLine($"{this.lastQuery.results["results"][0]["title"]}");
+                var selectedResultPosition = int.Parse(selectedResult);
+
+                // Build Click Message
+                var usageAnalyticsBody = new ClickAnalyticBody();
+                var result = this.lastQuery.results["results"][selectedResultPosition];
+                usageAnalyticsBody.language = "en";
+                usageAnalyticsBody.originLevel1 = SEARCH_HUB;
+                usageAnalyticsBody.actionCause = "searchboxSubmit";
+                usageAnalyticsBody.originContext = "Search";
+                usageAnalyticsBody.username = "vbernard@coveo.com";
+                usageAnalyticsBody.userDisplayName = "Vincent";
+                usageAnalyticsBody.searchQueryUid = this.lastQuery.searchid;
+                usageAnalyticsBody.documentPosition = selectedResultPosition;
+                usageAnalyticsBody.documentTitle = result["title"].ToString();
+                usageAnalyticsBody.documentUrl = result["uri"].ToString();
+                usageAnalyticsBody.documentUri = result["uri"].ToString();
+                usageAnalyticsBody.documentUriHash = result["raw"]["urihash"].ToString();
+                usageAnalyticsBody.sourceName = result["raw"]["source"].ToString();
+                var rankingModifier = result["rankingModifier"];
+                if ( rankingModifier != null ){
+                    usageAnalyticsBody.rankingModifier = result["rankingModifier"].ToString();
+                }
+                usageAnalyticsBody.queryPipeline = this.lastQuery.results["pipeline"].ToString();
+
+                // Build Request
+                var url = $"{CLICK_ENDPOINT}&org={this.orgId}&visitor={this.visitDetail.visitorId}";
+                var body = new StringContent(JsonConvert.SerializeObject(usageAnalyticsBody), Encoding.UTF8, "application/json");
+
+
+                // Get Response
+                var response = await PostAsync(url, body);
+                var responseString = response.Content.ReadAsStringAsync();
+                JObject responseJson = JObject.Parse(responseString.Result);
+
+                // Print Analytics Details
+                Console.ForegroundColor = ConsoleColor.Green;
+                Console.WriteLine("Sending UA Search Event");
+                Console.ForegroundColor = ConsoleColor.White;
+                Console.WriteLine("UA send: " + responseJson);
             }
         }
     }

@@ -1,9 +1,11 @@
-class UsageAnalyticsBody
+class SearchAnalyticBody
 {
     public string actionCause { get; set; }
     public string actionType { get; set; }
     public bool anonymous { get; set; }
     public string device { get; set; }
+    public string username { get; set; }
+    public string userDisplayName { get; set; }
     public bool mobile { get; set; }
     public string language { get; set; }
     public int responseTime { get; set; }
