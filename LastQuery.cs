@@ -3,4 +3,5 @@ class LastQuery{
     public string keyword { get; set; }
     public string aq { get; set; }
     public int responseTime { get; set; }
+    public int totalCount { get; set; }
 }
