@@ -15,6 +15,7 @@ class ClickAnalyticBody
     public string sourceName { get; set; }
     public int documentPosition { get; set; }
     public string actionCause { get; set; }
+    public string actionType { get; set; }
     public string documentTitle { get; set; }
     public string documentUrl { get; set; }
     public string queryPipeline { get; set; }

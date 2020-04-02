@@ -1,10 +1,10 @@
 ﻿using System;
-using System.Collections.Generic;
 using System.Net.Http;
 using System.Text;
 using System.Threading.Tasks;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
+using System.Collections;
 
 namespace dot_net_coveo_search
 {
@@ -15,39 +15,42 @@ namespace dot_net_coveo_search
         const string API_KEY = "";
         const string COVEO_ORG_ID = "";
         const string SEARCH_HUB = "";
+        const string FACET = "";
         static async Task Main(string[] args)
         {
             // Create a Coveo Client
             var coveoClient = new CoveoClient(API_KEY, COVEO_ORG_ID);
             Console.ForegroundColor = ConsoleColor.Green;
-            Console.WriteLine("🟢 Coveo Client Initialized for " + COVEO_ORG_ID);
-            
+            Console.WriteLine("🟢 Dot Net Client Initialized for " + COVEO_ORG_ID);
+            Console.WriteLine(" ");
+
             // Get the visit detail. Use a visitor id stored in the cookie for better personalization.
             var visitDetail = await coveoClient.GetVisitInformation(null);
             var continueSession = "Y";
 
                 while(continueSession == "Y"){
-                // Do a search request
-                var lastQuery = await coveoClient.Search();
+                    // Do a search request
+                    var lastQuery = await coveoClient.Search();
 
-                // Leave a trace.
-                await coveoClient.SendSearchUA();
+                    // Leave a trace.
+                    await coveoClient.SendSearchUA();
 
-                // Send a click
-                await coveoClient.SendClickUA();
-
-                Console.ForegroundColor = ConsoleColor.White;
-                Console.WriteLine("Continue session? (Y/N)");
-                continueSession = Console.ReadLine();
+                    // Send a click
+                    await coveoClient.SendClickUA();
+                    
+                    // Perform another search?
+                    Console.ForegroundColor = ConsoleColor.White;
+                    Console.WriteLine("Continue session? (Y/N)");
+                    continueSession = Console.ReadLine();
                 }
-                
+            // Terminate the session.
             Console.ForegroundColor = ConsoleColor.Yellow;
             Console.WriteLine("🟡 Coveo Client Terminated");
         }
-
         public class CoveoClient
         {
             private const string SEARCH_ENDPOINT = "https://platform.cloud.coveo.com/rest/search/v2/";
+            private const string QUERY_SUGGEST_ENDPOINT = "https://platform.cloud.coveo.com/rest/search/v2/querySuggest";
             private const string ANALYTICS_ENDPOINT = "https://platform.cloud.coveo.com/rest/ua/v15/analytics/search?prioritizeVisitorParameter=false";
             private const string CLICK_ENDPOINT = "https://platform.cloud.coveo.com/rest/ua/v15/analytics/click?prioritizeVisitorParameter=false";
             private const string VISIT_ENDPOINT = "https://platform.cloud.coveo.com/rest/ua/v15/analytics/visit?prioritizeVisitorParameter=false";
@@ -55,7 +58,6 @@ namespace dot_net_coveo_search
             public String orgId { get; private set; }
             private LastQuery lastQuery;
             private VisitDetail visitDetail;
-
             public CoveoClient(String apiKey, String orgId)
             {
                 client.DefaultRequestHeaders.Add("Authorization", "Bearer " + apiKey);
@@ -67,6 +69,8 @@ namespace dot_net_coveo_search
                 try
                 {
                     var response = await client.PostAsync(url, body);
+                    // DEBUG tip: Remove comment from the line below and inspect the more verbose messages from Coveo Cloud
+                    var responseString = response.Content.ReadAsStringAsync();
                     response.EnsureSuccessStatusCode();
                     return response;
                 }
@@ -94,10 +98,12 @@ namespace dot_net_coveo_search
                     visitDetail.visitorId = responseJson["visitorId"].ToString();
 
                     // Print Visit information
-                    Console.WriteLine("Fetching Visit Information");
-                    Console.ForegroundColor = ConsoleColor.White;
+                    Console.ForegroundColor = ConsoleColor.Cyan;
+                    Console.WriteLine("Creating Visit");
+                    Console.ForegroundColor = ConsoleColor.Gray;
                     Console.WriteLine("User visit ID: " + visitDetail.visitId);
                     Console.WriteLine("User visitor ID: " + visitDetail.visitorId);
+                    Console.WriteLine(" ");
 
                     this.visitDetail = visitDetail;
                     return visitDetail;
@@ -118,15 +124,31 @@ namespace dot_net_coveo_search
                 Console.ForegroundColor = ConsoleColor.White;
                 Console.WriteLine("Enter keywords: ");
                 var userQuery = Console.ReadLine();
+                // var userQuery = "laptop";
                 Console.WriteLine("Enter filters:");
                 var userAdvancedQuery = Console.ReadLine();
+                // var userAdvancedQuery = "";
+
+                // Build Facets
+                var facet = new GroupByParams{
+                    field = FACET,
+                    maximumNumberOfValues = 10,
+                    sortCriteria = "occurrences",
+                    injectionDepth = 1000,
+                    completeFacetWithStandardValues = true,
+                };
+
+                GroupByParams[] facets = new GroupByParams[1];
+                facets.SetValue(facet, 0);
 
                 // Build Params
-                var queryParam = new QueryParam();
-                queryParam.q = userQuery;
-                queryParam.aq = userAdvancedQuery;
-                queryParam.organizationId = this.orgId;
-                queryParam.searchHub = SEARCH_HUB;
+                var queryParam = new QueryParams{
+                    q = userQuery,
+                    aq = userAdvancedQuery,
+                    organizationId = this.orgId,
+                    searchHub = SEARCH_HUB,
+                    groupBy = facets
+                };
 
                 // Build Request
                 var url = SEARCH_ENDPOINT;
@@ -149,17 +171,34 @@ namespace dot_net_coveo_search
                     results = responseJson
                 };
 
-                // Print Result Info
+                // Print Query Info
                 Console.ForegroundColor = ConsoleColor.Green;
                 Console.WriteLine("✅ Query Success");
+                Console.ForegroundColor = ConsoleColor.Gray;
+                Console.WriteLine($"Results: {responseJson["totalCount"]}           Response Time: {responseJson["duration"]}ms");
+                Console.WriteLine($" ");    
+
+                // Print Facet Info
+                foreach (var facetResult in responseJson["groupByResults"]){
+                    Console.WriteLine($"Filter {facetResult["field"]}");
+                        foreach (var facetValue in facetResult["values"]){
+                            Console.WriteLine($"{facetValue["numberOfResults"]} - {facetValue["value"]} ");
+                        }
+                }
+                Console.WriteLine($" ");
+
+
+                // Print Result List
                 Console.ForegroundColor = ConsoleColor.White;
-                Console.WriteLine("Results: " + responseJson["totalCount"]);
-                var i = 0;
-                foreach (var item in responseJson["results"])
+                var i = 1;
+                foreach (var result in responseJson["results"])
                 {
-                    Console.WriteLine($"{i} | {item["title"].ToString()} | ${item["raw"]["dpretailprice"]} | {item["uri"].ToString()}");
+                    Console.WriteLine($"{i} | {result["raw"]["coveodpunifiedbrand"].ToString()} | {result["title"].ToString()} | ${result["raw"]["dpretailprice"]} ➜ ${result["raw"]["dpsaleprice"]}");
+                    Console.WriteLine($" ");
                     i++;
                 }
+                
+                // Return last query for UA
                 this.lastQuery = lastQuery;
                 return lastQuery;
             }
@@ -168,20 +207,21 @@ namespace dot_net_coveo_search
             {
 
                 // Build Analytic Message
-                var usageAnalyticsBody = new SearchAnalyticBody();
-                usageAnalyticsBody.language = "en";
-                usageAnalyticsBody.queryText = this.lastQuery.keyword;
-                usageAnalyticsBody.originLevel1 = SEARCH_HUB;
-                usageAnalyticsBody.actionCause = "searchboxSubmit";
-                usageAnalyticsBody.actionType = "search box";
-                usageAnalyticsBody.originContext = "Search";
-                usageAnalyticsBody.username = "vbernard@coveo.com";
-                usageAnalyticsBody.userDisplayName = "Vincent";
-                usageAnalyticsBody.searchQueryUid = this.lastQuery.searchid;
-                usageAnalyticsBody.responseTime = this.lastQuery.responseTime;
-                usageAnalyticsBody.advancedQuery = this.lastQuery.aq;
-                usageAnalyticsBody.resultsPerPage = 10;
-                usageAnalyticsBody.numberOfResults = this.lastQuery.totalCount;
+                var usageAnalyticsBody = new SearchAnalyticBody{
+                    language = "en",
+                    queryText = this.lastQuery.keyword,
+                    originLevel1 = SEARCH_HUB,
+                    actionCause = "searchboxSubmit",
+                    actionType = "search box",
+                    originContext = "Search",
+                    username = "vbernard@coveo.com",
+                    userDisplayName = "Vincent",
+                    searchQueryUid = this.lastQuery.searchid,
+                    responseTime = this.lastQuery.responseTime,
+                    advancedQuery = this.lastQuery.aq,
+                    resultsPerPage = 10,
+                    numberOfResults = this.lastQuery.totalCount,
+                };
 
                 // Build Request
                 var url = $"{ANALYTICS_ENDPOINT}&org={this.orgId}&visitor={this.visitDetail.visitorId}";
@@ -193,47 +233,55 @@ namespace dot_net_coveo_search
                 JObject responseJson = JObject.Parse(responseString.Result);
 
                 // Print Analytics Details
-                Console.ForegroundColor = ConsoleColor.Green;
-                Console.WriteLine("Sending UA Search Event");
-                Console.ForegroundColor = ConsoleColor.White;
+                Console.ForegroundColor = ConsoleColor.Cyan;
+                Console.WriteLine($"Search Event Sent: {this.lastQuery.keyword}");
+                Console.ForegroundColor = ConsoleColor.Gray;
                 Console.WriteLine("UA send: " + responseJson);
+                Console.WriteLine(" ");
 
             }
 
             public async Task SendClickUA(){
                 var selectedResult = "";
                 Console.ForegroundColor = ConsoleColor.White;
-                Console.WriteLine("Click on? [0-9] or N");
+                Console.WriteLine("Click on? [1-10] or N");
                 selectedResult = Console.ReadLine();
-                
+                // selectedResult = "1";
+
                 if(selectedResult == "N"){
                     return;
                 }
+
                 // Print Selected Result
-                Console.WriteLine($"{this.lastQuery.results["results"][0]["title"]}");
                 var selectedResultPosition = int.Parse(selectedResult);
+                var resultPositionInResponse = selectedResultPosition -1;
+                var result = this.lastQuery.results["results"][resultPositionInResponse];
+                Console.WriteLine($"{result["title"]}");
 
                 // Build Click Message
-                var usageAnalyticsBody = new ClickAnalyticBody();
-                var result = this.lastQuery.results["results"][selectedResultPosition];
-                usageAnalyticsBody.language = "en";
-                usageAnalyticsBody.originLevel1 = SEARCH_HUB;
-                usageAnalyticsBody.actionCause = "searchboxSubmit";
-                usageAnalyticsBody.originContext = "Search";
-                usageAnalyticsBody.username = "vbernard@coveo.com";
-                usageAnalyticsBody.userDisplayName = "Vincent";
-                usageAnalyticsBody.searchQueryUid = this.lastQuery.searchid;
-                usageAnalyticsBody.documentPosition = selectedResultPosition;
-                usageAnalyticsBody.documentTitle = result["title"].ToString();
-                usageAnalyticsBody.documentUrl = result["uri"].ToString();
-                usageAnalyticsBody.documentUri = result["uri"].ToString();
-                usageAnalyticsBody.documentUriHash = result["raw"]["urihash"].ToString();
-                usageAnalyticsBody.sourceName = result["raw"]["source"].ToString();
+                var usageAnalyticsBody = new ClickAnalyticBody{
+                    language = "en",
+                    originLevel1 = SEARCH_HUB,
+                    actionCause = "documentOpen",
+                    actionType = "document",
+                    originContext = "Search",
+                    username = "vbernard@coveo.com",
+                    userDisplayName = "Vincent",
+                    searchQueryUid = this.lastQuery.searchid,
+                    documentPosition = selectedResultPosition,
+                    documentTitle = result["title"].ToString(),
+                    documentUrl = result["clickUri"].ToString(),
+                    documentUri = result["uri"].ToString(),
+                    documentUriHash = result["raw"]["urihash"].ToString(),
+                    sourceName = result["raw"]["source"].ToString(),
+                    queryPipeline = this.lastQuery.results["pipeline"].ToString()
+                };
+
+                // Add validation for rankingModidier, as the attribute is not always on the results
                 var rankingModifier = result["rankingModifier"];
                 if ( rankingModifier != null ){
                     usageAnalyticsBody.rankingModifier = result["rankingModifier"].ToString();
                 }
-                usageAnalyticsBody.queryPipeline = this.lastQuery.results["pipeline"].ToString();
 
                 // Build Request
                 var url = $"{CLICK_ENDPOINT}&org={this.orgId}&visitor={this.visitDetail.visitorId}";
@@ -246,10 +294,11 @@ namespace dot_net_coveo_search
                 JObject responseJson = JObject.Parse(responseString.Result);
 
                 // Print Analytics Details
-                Console.ForegroundColor = ConsoleColor.Green;
-                Console.WriteLine("Sending UA Search Event");
-                Console.ForegroundColor = ConsoleColor.White;
+                Console.ForegroundColor = ConsoleColor.Cyan;
+                Console.WriteLine($"Click Event Sent: {selectedResult} | { result["title"]}");
+                Console.ForegroundColor = ConsoleColor.Gray;
                 Console.WriteLine("UA send: " + responseJson);
+                Console.WriteLine(" ");
             }
         }
     }
