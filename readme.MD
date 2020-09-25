@@ -1,4 +1,4 @@
-# dot-net-coveo-searfh
+# dot-net-coveo-search
 
 A C# client to interact with Coveo Cloud APIs
   - Send requests to the Search API
